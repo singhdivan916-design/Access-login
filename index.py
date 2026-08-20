@@ -6,7 +6,6 @@ import json
 import base64
 import warnings
 from datetime import datetime
-from http import HTTPStatus
 
 warnings.filterwarnings("ignore")
 import requests
@@ -39,13 +38,20 @@ MY_DESCRIPTOR = b'\n\x08my.proto"\xae\t\n\x08GameData\x12\x11\n\ttimestamp\x18\x
 
 OUTPUT_DESCRIPTOR = b'\n\x13jwt_generator.proto"\xd2\x02\n\nGarena_420\x12\x12\n\naccount_id\x18\x01 \x01(\x03\x12\x0e\n\x06region\x18\x02 \x01(\t\x12\r\n\x05place\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\r\n\x05token\x18\x08 \x01(\t\x12\n\n\x02id\x18\t \x01(\x05\x12\x0b\n\x03api\x18\n \x01(\t\x12\x0e\n\x06number\x18\x0c \x01(\x05\x12\x1e\n\tGarena420\x18\x0f \x01(\x0b\x32\x0b.Garena_420\x12\x0c\n\x04area\x18\x10 \x01(\t\x12\x11\n\tmain_area\x18\x12 \x01(\t\x12\x0c\n\x04city\x18\x13 \x01(\t\x12\x0c\n\x04name\x18\x14 \x01(\t\x12\x11\n\ttimestamp\x18\x15 \x01(\x03\x12\x0e\n\x06binary\x18\x16 \x01(\x0c\x12\x13\n\x0bbinary_data\x18\x17 \x01(\x0c\x1a"\n\x12Decrypted_Payloads\x12\x0c\n\x04type\x18\x01 \x01(\x05b\x06proto3'
 
-pool = descriptor_pool.Default()
-pool.AddSerializedFile(MY_DESCRIPTOR)
-pool.AddSerializedFile(OUTPUT_DESCRIPTOR)
-
-# FIX: Use the correct API to generate message classes
-GameData = message_factory.GetMessages([pool.FindMessageTypeByName('GameData')], pool)['GameData']
-Garena420 = message_factory.GetMessages([pool.FindMessageTypeByName('Garena_420')], pool)['Garena_420']
+# ------------------------------------------------------------
+# Set up protobuf with error logging
+# ------------------------------------------------------------
+try:
+    pool = descriptor_pool.Default()
+    pool.AddSerializedFile(MY_DESCRIPTOR)
+    pool.AddSerializedFile(OUTPUT_DESCRIPTOR)
+    factory = message_factory.MessageFactory(pool)
+    GameData = factory.GetPrototype(pool.FindMessageTypeByName('GameData'))
+    Garena420 = factory.GetPrototype(pool.FindMessageTypeByName('Garena_420'))
+    print("✅ Protobuf classes loaded successfully", file=sys.stderr)
+except Exception as e:
+    print(f"❌ Protobuf setup failed: {e}", file=sys.stderr)
+    raise
 
 # ------------------------------------------------------------
 # Helper functions (unchanged)
@@ -112,7 +118,6 @@ def fetch_account_info(access_token):
 # ------------------------------------------------------------
 _cached_open_id = None
 _cached_preferred_platform = None
-_cache_time = 0
 
 def get_cached_open_id(access_token):
     global _cached_open_id
@@ -121,7 +126,7 @@ def get_cached_open_id(access_token):
     return _cached_open_id
 
 def get_cached_preferred_platform(access_token):
-    global _cached_preferred_platform, _cache_time
+    global _cached_preferred_platform
     if _cached_preferred_platform is None:
         try:
             _, _, _, platform = fetch_account_info(access_token)
