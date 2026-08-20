@@ -43,11 +43,12 @@ pool = descriptor_pool.Default()
 pool.AddSerializedFile(MY_DESCRIPTOR)
 pool.AddSerializedFile(OUTPUT_DESCRIPTOR)
 
-GameData = message_factory.GetMessageClass(pool.FindMessageTypeByName('GameData'))
-Garena420 = message_factory.GetMessageClass(pool.FindMessageTypeByName('Garena_420'))
+# FIX: Use the correct API to generate message classes
+GameData = message_factory.GetMessages([pool.FindMessageTypeByName('GameData')], pool)['GameData']
+Garena420 = message_factory.GetMessages([pool.FindMessageTypeByName('Garena_420')], pool)['Garena_420']
 
 # ------------------------------------------------------------
-# Helper functions
+# Helper functions (unchanged)
 # ------------------------------------------------------------
 def encrypt_data(data):
     cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
