@@ -1,6 +1,14 @@
 {
+  "buildCommand": "pip install -r requirements.txt",
+  "functions": {
+    "index.py": {
+      "runtime": "python3.11"
+    }
+  },
   "rewrites": [
-    { "source": "/Ping", "destination": "/index.py" },
-    { "source": "/MajorLogin", "destination": "/index.py" }
+    {
+      "source": "/(.*)",
+      "destination": "/index.py"
+    }
   ]
 }
