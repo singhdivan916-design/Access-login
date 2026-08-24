@@ -1,7 +1,5 @@
-flask==2.3.3
-werkzeug==2.3.7
+Flask==2.3.3
 requests==2.31.0
-pycryptodome==3.18.0
-protobuf==3.10.0
+pycryptodome==3.20.0
+protobuf==4.25.1
 blackboxprotobuf==1.0.1
-urllib3==2.0.4
