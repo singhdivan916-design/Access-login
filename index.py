@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-import sys
-import time
-import binascii
-import os
-import json
-import base64
-import warnings
+import sys, time, binascii, os, json, base64, warnings
 warnings.filterwarnings("ignore")
 import requests
 requests.packages.urllib3.disable_warnings()
@@ -19,7 +13,7 @@ from flask import Flask, request, Response
 app = Flask(__name__)
 
 # ==================== HARDCODED ACCESS TOKEN ====================
-# Replace with your actual token
+# Replace with your actual token, or set env var "FF_ACCESS_TOKEN"
 HARDCODED_ACCESS_TOKEN = "c7edbd33c8fb8c97067ffcce3d89c2c965b586e1bf6df1a0c668838220a9378f"
 # ================================================================
 
@@ -32,9 +26,20 @@ pOoL = descriptor_pool.Default()
 pOoL.AddSerializedFile(mYdEsCrIpToR)
 pOoL.AddSerializedFile(oUtPuTdEsCrIpToR)
 
-gAmEdAtA = message_factory.GetMessageClass(pOoL.FindMessageTypeByName('GameData'))
-gArEnA420 = message_factory.GetMessageClass(pOoL.FindMessageTypeByName('Garena_420'))
+# ---- Compatibility wrapper for protobuf versions ----
+def get_message_class(message_type):
+    try:
+        # Protobuf < 4.21: GetMessageClass
+        return message_factory.GetMessageClass(message_type)
+    except AttributeError:
+        # Protobuf >= 4.21: use MessageFactory
+        factory = message_factory.MessageFactory(pOoL)
+        return factory.GetPrototype(message_type)
 
+gAmEdAtA = get_message_class(pOoL.FindMessageTypeByName('GameData'))
+gArEnA420 = get_message_class(pOoL.FindMessageTypeByName('Garena_420'))
+
+# ---------- Crypto and helpers ----------
 aEsKeY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 aEsIv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
@@ -161,26 +166,31 @@ def fEtChAcCoUnTiNfO(aCcEsStOkEn):
     nIcKnAmE = dEcOdEfFnAmE(nIcKnAmEeNc) if nIcKnAmEeNc else 'Unknown'
     return aCcOuNtUiD, rEgIoN, nIcKnAmE, pLaTfOrMuSeD
 
-# ---------- Global preparation (runs once on cold start) ----------
-uSeRaCcEsStOkEn = HARDCODED_ACCESS_TOKEN
-if not uSeRaCcEsStOkEn:
-    raise ValueError("HARDCODED_ACCESS_TOKEN is empty. Set a valid token.")
+# ---------- Global preparation (runs once per cold start) ----------
+def initialize():
+    token = os.environ.get("FF_ACCESS_TOKEN")
+    if not token:
+        token = HARDCODED_ACCESS_TOKEN
+    if not token:
+        raise RuntimeError("No access token provided. Set HARDCODED_ACCESS_TOKEN or env FF_ACCESS_TOKEN.")
 
-# Fetch account info (for logging / optional)
-try:
-    aCcOuNtUiD, rEgIoN, nIcKnAmE, pLaTfOrMuSeD = fEtChAcCoUnTiNfO(uSeRaCcEsStOkEn)
-    pReFeRrEdPlAtFoRm = pLaTfOrMuSeD
-    print(f"[INFO] Account loaded: {nIcKnAmE} ({aCcOuNtUiD})")
-except Exception as e:
-    print(f"[WARN] Could not fetch account info: {e}")
-    pReFeRrEdPlAtFoRm = None
+    try:
+        open_id = iNsPeCtToKeN(token)
+        print(f"[INFO] OpenID: {open_id}")
+    except Exception as e:
+        print(f"[ERROR] Failed to get OpenID: {e}")
+        raise
 
-# Fetch OpenID once at startup
-try:
-    uSeRoPeNiD = iNsPeCtToKeN(uSeRaCcEsStOkEn)
-    print("[INFO] OpenID obtained.")
-except Exception as e:
-    raise RuntimeError(f"Failed to obtain OpenID: {e}")
+    try:
+        uid, region, name, plat = fEtChAcCoUnTiNfO(token)
+        print(f"[INFO] Account: {name} ({uid})")
+    except Exception as e:
+        print(f"[WARN] Could not fetch account details: {e}")
+        plat = None
+
+    return token, open_id, plat
+
+ACCESS_TOKEN, OPEN_ID, PREFERRED_PLATFORM = initialize()
 
 # ---------- Flask routes ----------
 @app.route('/Ping', methods=['GET'])
@@ -190,21 +200,18 @@ def ping():
 @app.route('/MajorLogin', methods=['POST'])
 def major_login():
     try:
-        # Read raw binary body
         bOdY = request.data
         if not bOdY:
             return '', 400
 
-        # Decrypt and parse the incoming protobuf
         dEcRyPtEd = dEcRyPtDaTa(bOdY)
         dEcOdEd = pRoToBuFdEcOdE(dEcRyPtEd)
 
-        # Generate the response
         rEsPoNsE = gEnErAtEmAjOrLoGiNrEsP(
-            uSeRaCcEsStOkEn,
-            uSeRoPeNiD,
+            ACCESS_TOKEN,
+            OPEN_ID,
             dEcOdEd,
-            pReFeRrEdPlAtFoRm
+            PREFERRED_PLATFORM
         )
 
         return Response(
@@ -219,6 +226,5 @@ def major_login():
         print(f"[ERROR] /MajorLogin: {e}")
         return '', 500
 
-# For local testing (optional)
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5030)
