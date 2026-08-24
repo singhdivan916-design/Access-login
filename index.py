@@ -7,30 +7,23 @@ import json
 import base64
 import warnings
 warnings.filterwarnings("ignore")
-from flask import Flask, request, Response
+import requests
+requests.packages.urllib3.disable_warnings()
 from datetime import datetime
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from google.protobuf import descriptor_pool, message_factory
 import blackboxprotobuf
-import requests
-requests.packages.urllib3.disable_warnings()
+from flask import Flask, request, Response
 
 app = Flask(__name__)
 
-# ===== HARDCODED ACCESS TOKEN =====
-USER_ACCESS_TOKEN = "0124c9a79d585c25a9175f47ab0c83c52e78451fa56913d4678c5f9ad159e001"  # Replace with your actual token
-USER_OPEN_ID = None
+# ==================== HARDCODED ACCESS TOKEN ====================
+# Replace with your actual token
+HARDCODED_ACCESS_TOKEN = "c7edbd33c8fb8c97067ffcce3d89c2c965b586e1bf6df1a0c668838220a9378f"
+# ================================================================
 
-# ===== ANSI COLORS =====
-C = "\033[1;36m"
-G = "\033[1;32m"
-R = "\033[1;31m"
-Y = "\033[1;33m"
-W = "\033[1;37m"
-S = "\033[0m"
-
-# ===== PROTOBUF DESCRIPTORS =====
+# ---------- Proto definitions (unchanged) ----------
 mYdEsCrIpToR = b'\n\x08my.proto"\xae\t\n\x08GameData\x12\x11\n\ttimestamp\x18\x03 \x01(\t\x12\x11\n\tgame_name\x18\x04 \x01(\t\x12\x14\n\x0cgame_version\x18\x05 \x01(\x05\x12\x14\n\x0cversion_code\x18\x07 \x01(\t\x12\x0f\n\x07os_info\x18\x08 \x01(\t\x12\x13\n\x0bdevice_type\x18\t \x01(\t\x12\x18\n\x10network_provider\x18\n \x01(\t\x12\x17\n\x0fconnection_type\x18\x0b \x01(\t\x12\x14\n\x0cscreen_width\x18\x0c \x01(\x05\x12\x15\n\rscreen_height\x18\r \x01(\x05\x12\x0b\n\x03dpi\x18\x0e \x01(\t\x12\x10\n\x08cpu_info\x18\x0f \x01(\t\x12\x11\n\ttotal_ram\x18\x10 \x01(\x05\x12\x10\n\x08gpu_name\x18\x11 \x01(\t\x12\x13\n\x0bgpu_version\x18\x12 \x01(\t\x12\x0f\n\x07user_id\x18\x13 \x01(\t\x12\x12\n\nip_address\x18\x14 \x01(\t\x12\x10\n\x08language\x18\x15 \x01(\t\x12\x0f\n\x07open_id\x18\x16 \x01(\t\x12\x15\n\rplatform_type\x18\x17 \x01(\x05\x12\x1a\n\x12device_form_factor\x18\x18 \x01(\t\x12\x14\n\x0cdevice_model\x18\x19 \x01(\t\x12\x14\n\x0caccess_token\x18\x1d \x01(\t\x12\x18\n\x10unknown_field_30\x18\x1e \x01(\x05\x12"\n\x1asecondary_network_provider\x18) \x01(\t\x12!\n\x19secondary_connection_type\x18* \x01(\t\x12\x11\n\tunique_id\x18\x39 \x01(\t\x12\x10\n\x08field_60\x18< \x01(\x05\x12\x10\n\x08field_61\x18= \x01(\x05\x12\x10\n\x08field_62\x18> \x01(\x05\x12\x10\n\x08field_63\x18? \x01(\x05\x12\x10\n\x08field_64\x18@ \x01(\x05\x12\x10\n\x08field_65\x18A \x01(\x05\x12\x10\n\x08field_66\x18B \x01(\x05\x12\x10\n\x08field_67\x18C \x01(\x05\x12\x10\n\x08field_70\x18F \x01(\x05\x12\x10\n\x08field_73\x18I \x01(\x05\x12\x14\n\x0clibrary_path\x18J \x01(\t\x12\x10\n\x08field_76\x18L \x01(\x05\x12\x10\n\x08apk_info\x18M \x01(\t\x12\x10\n\x08field_78\x18N \x01(\x05\x12\x10\n\x08field_79\x18O \x01(\x05\x12\x17\n\x0fos_architecture\x18Q \x01(\t\x12\x14\n\x0cbuild_number\x18S \x01(\t\x12\x10\n\x08field_85\x18U \x01(\x05\x12\x18\n\x10graphics_backend\x18V \x01(\t\x12\x19\n\x11max_texture_units\x18W \x01(\x05\x12\x15\n\rrendering_api\x18X \x01(\x05\x12\x18\n\x10encoded_field_89\x18Y \x01(\t\x12\x10\n\x08field_92\x18\\ \x01(\x05\x12\x13\n\x0bmarketplace\x18] \x01(\t\x12\x16\n\x0eencryption_key\x18^ \x01(\t\x12\x15\n\rtotal_storage\x18_ \x01(\x05\x12\x10\n\x08field_97\x18a \x01(\x05\x12\x10\n\x08field_98\x18b \x01(\x05\x12\x10\n\x08field_99\x18c \x01(\t\x12\x11\n\tfield_100\x18d \x01(\tb\x06proto3'
 
 oUtPuTdEsCrIpToR = b'\n\x13jwt_generator.proto"\xd2\x02\n\nGarena_420\x12\x12\n\naccount_id\x18\x01 \x01(\x03\x12\x0e\n\x06region\x18\x02 \x01(\t\x12\r\n\x05place\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\r\n\x05token\x18\x08 \x01(\t\x12\n\n\x02id\x18\t \x01(\x05\x12\x0b\n\x03api\x18\n \x01(\t\x12\x0e\n\x06number\x18\x0c \x01(\x05\x12\x1e\n\tGarena420\x18\x0f \x01(\x0b\x32\x0b.Garena_420\x12\x0c\n\x04area\x18\x10 \x01(\t\x12\x11\n\tmain_area\x18\x12 \x01(\t\x12\x0c\n\x04city\x18\x13 \x01(\t\x12\x0c\n\x04name\x18\x14 \x01(\t\x12\x11\n\ttimestamp\x18\x15 \x01(\x03\x12\x0e\n\x06binary\x18\x16 \x01(\x0c\x12\x13\n\x0bbinary_data\x18\x17 \x01(\x0c\x1a"\n\x12Decrypted_Payloads\x12\x0c\n\x04type\x18\x01 \x01(\x05b\x06proto3'
@@ -42,15 +35,12 @@ pOoL.AddSerializedFile(oUtPuTdEsCrIpToR)
 gAmEdAtA = message_factory.GetMessageClass(pOoL.FindMessageTypeByName('GameData'))
 gArEnA420 = message_factory.GetMessageClass(pOoL.FindMessageTypeByName('Garena_420'))
 
-# ===== ENCRYPTION KEYS =====
 aEsKeY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 aEsIv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
-# ===== URLS =====
 mAjOrLoGiNuRl = "https://loginbp.ggblueshark.com/MajorLogin"
 iNsPeCtUrL = "https://100067.connect.garena.com/oauth/token/inspect"
 
-# ===== ENCRYPTION/DECRYPTION =====
 def eNcRyPtDaTa(dAtA):
     cIpHeR = AES.new(aEsKeY, AES.MODE_CBC, aEsIv)
     return cIpHeR.encrypt(pad(dAtA, AES.block_size))
@@ -68,7 +58,6 @@ def pRoToBuFdEcOdE(dAtA: bytes):
     dEcOdEd, _ = blackboxprotobuf.decode_message(dAtA)
     return dEcOdEd
 
-# ===== TOKEN INSPECTION =====
 def iNsPeCtToKeN(aCcEsStOkEn):
     uRl = f"{iNsPeCtUrL}?token={aCcEsStOkEn}"
     hEaDeRs = {'User-Agent': "GarenaMSDK/4.0.19P9"}
@@ -78,7 +67,6 @@ def iNsPeCtToKeN(aCcEsStOkEn):
     dAtA = rEsP.json()
     return dAtA.get('open_id')
 
-# ===== DECODING =====
 xOrKeY = b"1e5898ccb8dfdd921f9bdea848768b64a201"
 
 def dEcOdEfFnAmE(b64_str: str) -> str:
@@ -96,7 +84,6 @@ def dEcOdEfFnAmE(b64_str: str) -> str:
     except Exception:
         return b64_str
 
-# ===== MAJOR LOGIN RESPONSE GENERATION =====
 def gEnErAtEmAjOrLoGiNrEsP(aCcEsStOkEn, oPeNiD, bAsEfIeLdS, pReFeRrEdPlAtFoRm=None):
     aLlPlAtFoRmS = list(range(1, 10))
     if pReFeRrEdPlAtFoRm is not None and pReFeRrEdPlAtFoRm in aLlPlAtFoRmS:
@@ -158,7 +145,6 @@ def gEnErAtEmAjOrLoGiNrEsP(aCcEsStOkEn, oPeNiD, bAsEfIeLdS, pReFeRrEdPlAtFoRm=No
         time.sleep(0.1)
     raise Exception("No valid response after trying all platforms 1-9")
 
-# ===== ACCOUNT INFO FETCHING =====
 def fEtChAcCoUnTiNfO(aCcEsStOkEn):
     uRl = f"https://ff-jwt-gen-api.lovable.app/api/public/token?access_token={aCcEsStOkEn}"
     rEsP = requests.get(uRl, timeout=10, verify=False)
@@ -175,79 +161,64 @@ def fEtChAcCoUnTiNfO(aCcEsStOkEn):
     nIcKnAmE = dEcOdEfFnAmE(nIcKnAmEeNc) if nIcKnAmEeNc else 'Unknown'
     return aCcOuNtUiD, rEgIoN, nIcKnAmE, pLaTfOrMuSeD
 
-# ===== INITIALIZE ON STARTUP =====
-PREFERRED_PLATFORM = None
+# ---------- Global preparation (runs once on cold start) ----------
+uSeRaCcEsStOkEn = HARDCODED_ACCESS_TOKEN
+if not uSeRaCcEsStOkEn:
+    raise ValueError("HARDCODED_ACCESS_TOKEN is empty. Set a valid token.")
 
-def initialize_app():
-    global USER_OPEN_ID, PREFERRED_PLATFORM
-    try:
-        print("[*] Fetching account details...")
-        aCcOuNtUiD, rEgIoN, nIcKnAmE, pLaTfOrMuSeD = fEtChAcCoUnTiNfO(USER_ACCESS_TOKEN)
-        PREFERRED_PLATFORM = pLaTfOrMuSeD
-        print("[+] Account info retrieved successfully.")
-        print(f"[+] Nickname    : {nIcKnAmE}")
-        print(f"[+] Region      : {rEgIoN}")
-        print(f"[+] Account UID : {aCcOuNtUiD}")
-        if PREFERRED_PLATFORM:
-            print(f"[+] Preferred Platform : {PREFERRED_PLATFORM}")
-    except Exception as e:
-        print(f"[!] Failed to fetch account info: {e}")
-        print("[*] Continuing without preferred platform.")
+# Fetch account info (for logging / optional)
+try:
+    aCcOuNtUiD, rEgIoN, nIcKnAmE, pLaTfOrMuSeD = fEtChAcCoUnTiNfO(uSeRaCcEsStOkEn)
+    pReFeRrEdPlAtFoRm = pLaTfOrMuSeD
+    print(f"[INFO] Account loaded: {nIcKnAmE} ({aCcOuNtUiD})")
+except Exception as e:
+    print(f"[WARN] Could not fetch account info: {e}")
+    pReFeRrEdPlAtFoRm = None
 
-    try:
-        print("[*] Loading open_id via token inspection...")
-        USER_OPEN_ID = iNsPeCtToKeN(USER_ACCESS_TOKEN)
-        print("[+] OpenID obtained automatically.")
-    except Exception as e:
-        print(f"[!] Failed to inspect token: {e}")
-        USER_OPEN_ID = None
+# Fetch OpenID once at startup
+try:
+    uSeRoPeNiD = iNsPeCtToKeN(uSeRaCcEsStOkEn)
+    print("[INFO] OpenID obtained.")
+except Exception as e:
+    raise RuntimeError(f"Failed to obtain OpenID: {e}")
 
-# ===== FLASK ROUTES =====
-@app.route('/Ping', methods=['GET', 'POST'])
-def handle_ping():
+# ---------- Flask routes ----------
+@app.route('/Ping', methods=['GET'])
+def ping():
     return '', 200
 
-@app.route('/MajorLogin', methods=['GET', 'POST'])
-def handle_major_login():
+@app.route('/MajorLogin', methods=['POST'])
+def major_login():
     try:
-        body = request.get_data()
-        if not body:
-            return {'error': 'No body'}, 400
-        
-        dEcRyPtEd = dEcRyPtDaTa(body)
+        # Read raw binary body
+        bOdY = request.data
+        if not bOdY:
+            return '', 400
+
+        # Decrypt and parse the incoming protobuf
+        dEcRyPtEd = dEcRyPtDaTa(bOdY)
         dEcOdEd = pRoToBuFdEcOdE(dEcRyPtEd)
-        
+
+        # Generate the response
         rEsPoNsE = gEnErAtEmAjOrLoGiNrEsP(
-            USER_ACCESS_TOKEN,
-            USER_OPEN_ID,
+            uSeRaCcEsStOkEn,
+            uSeRoPeNiD,
             dEcOdEd,
-            PREFERRED_PLATFORM
+            pReFeRrEdPlAtFoRm
         )
-        
-        return Response(rEsPoNsE, content_type='application/octet-stream')
+
+        return Response(
+            response=rEsPoNsE,
+            status=200,
+            headers={
+                'Content-Type': 'application/octet-stream',
+                'Connection': 'close'
+            }
+        )
     except Exception as e:
-        print(f"[!] Error in MajorLogin: {e}")
-        return {'error': str(e)}, 500
+        print(f"[ERROR] /MajorLogin: {e}")
+        return '', 500
 
-@app.route('/status', methods=['GET'])
-def status():
-    return {
-        'status': 'running',
-        'token': 'configured' if USER_ACCESS_TOKEN else 'missing',
-        'open_id': 'loaded' if USER_OPEN_ID else 'not loaded'
-    }, 200
-
-@app.route('/', methods=['GET'])
-def index():
-    return {
-        'app': 'Free Fire Login Engine',
-        'version': '1.0',
-        'endpoints': {
-            '/Ping': 'Health check',
-            '/MajorLogin': 'Login request handler',
-            '/status': 'Status information'
-        }
-    }, 200
-
-# Initialize app on startup
-initialize_app()
+# For local testing (optional)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5030)
