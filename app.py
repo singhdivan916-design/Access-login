@@ -31,10 +31,10 @@ pOoL = descriptor_pool.Default()
 pOoL.AddSerializedFile(mYdEsCrIpToR)
 pOoL.AddSerializedFile(oUtPuTdEsCrIpToR)
 
-# FIX: Use a MessageFactory instance
+# FIX: Use MessageFactory with GetPrototype
 factory = message_factory.MessageFactory(pool=pOoL)
-gAmEdAtA = factory.GetMessageClass(pOoL.FindMessageTypeByName('GameData'))
-gArEnA420 = factory.GetMessageClass(pOoL.FindMessageTypeByName('Garena_420'))
+gAmEdAtA = factory.GetPrototype(pOoL.FindMessageTypeByName('GameData'))
+gArEnA420 = factory.GetPrototype(pOoL.FindMessageTypeByName('Garena_420'))
 
 aEsKeY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 aEsIv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
