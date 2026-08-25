@@ -31,8 +31,10 @@ pOoL = descriptor_pool.Default()
 pOoL.AddSerializedFile(mYdEsCrIpToR)
 pOoL.AddSerializedFile(oUtPuTdEsCrIpToR)
 
-gAmEdAtA = message_factory.GetMessageClass(pOoL.FindMessageTypeByName('GameData'))
-gArEnA420 = message_factory.GetMessageClass(pOoL.FindMessageTypeByName('Garena_420'))
+# FIX: Use a MessageFactory instance
+factory = message_factory.MessageFactory(pool=pOoL)
+gAmEdAtA = factory.GetMessageClass(pOoL.FindMessageTypeByName('GameData'))
+gArEnA420 = factory.GetMessageClass(pOoL.FindMessageTypeByName('Garena_420'))
 
 aEsKeY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 aEsIv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
@@ -232,7 +234,7 @@ if __name__ == '__main__':
     pReFeRrEdPlAtFoRm = None
 
     # ---------- HARDCODE YOUR ACCESS TOKEN HERE ----------
-    HARDCODED_TOKEN = "75822dba02cfacf1f5ca68881bfb2dd22ec22ef63c2044315cce6da73f3e4e8d"   # <-- Replace with your token
+    HARDCODED_TOKEN = "75822dba02cfacf1f5ca68881bfb2dd22ec22ef63c2044315cce6da73f3e4e8d"   # <-- Replace with your actual token
     # ----------------------------------------------------
 
     pRiNtBaNnEr()
