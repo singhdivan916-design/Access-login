@@ -168,7 +168,11 @@ def gEnErAtEmAjOrLoGiNrEsP(aCcEsStOkEn, oPeNiD, bAsEfIeLdS, pReFeRrEdPlAtFoRm=No
         time.sleep(0.1)
     raise Exception("No valid response after trying all platforms 1-9")
 
-class handler(BaseHTTPRequestHandler):
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+class dYnAmIcVpShAnDlEr(BaseHTTPRequestHandler):
     def do_GET(self):
         self._handle()
     def do_POST(self):
@@ -259,6 +263,35 @@ class handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-# Vercel expects a top-level "handler" variable pointing to the request handler class
-# The class is already named "handler", so it's automatically exported.
-# No server startup code is needed in serverless environment.
+def pRiNtBaNnEr():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print("\n")
+    print(W + r"""
+        ██████╗ ██╗██╗   ██╗ █████╗ ███╗   ██╗
+        ██╔══██╗██║██║   ██║██╔══██╗████╗  ██║
+        ██║  ██║██║██║   ██║███████║██╔██╗ ██║
+        ██║  ██║██║╚██╗ ██╔╝██╔══██║██║╚██╗██║
+        ██████╔╝██║ ╚████╔╝ ██║  ██║██║ ╚████║
+        ╚═════╝ ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝
+    """ + S)
+    print(C + "        " + "═" * 50 + S)
+    print(Y + "                     Free Fire Login Engine" + S)
+    print(C + "        " + "═" * 50 + S)
+    print("\n")
+    print(W + "       FireXDecoder ❤️  |  Partner: Divan Singh" + S)
+    print(G + "        Telegram : Divan Singh: @DivanSingh" + S)
+    print(G + "        Telegram : FireXDecoder: @FireXDecoder" + S)
+    print("\n")
+
+if __name__ == '__main__':
+    pRiNtBaNnEr()
+    print(C + "        [*] Starting threaded login engine on http://0.0.0.0:5030 ..." + S)
+    server = ThreadingHTTPServer(('0.0.0.0', 5030), dYnAmIcVpShAnDlEr)
+    server.handle_error = lambda *args: None
+    print(G + "        [✓] Server running (multi‑threaded). Press Ctrl+C to stop." + S)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n" + R + "        [!] Shutting down." + S)
+        server.shutdown()
+        sys.exit(0)
