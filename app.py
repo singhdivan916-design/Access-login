@@ -41,8 +41,18 @@ gArEnA420 = factory.GetPrototype(pOoL.FindMessageTypeByName('Garena_420'))
 aEsKeY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 aEsIv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
-mAjOrLoGiNuRl = "https://loginbp.ggblueshark.com/MajorLogin"
+# ---------- UPDATED ----------
+mAjOrLoGiNuRl = "https://loginbp.ppmainecoonghj.com/MajorLogin"
 iNsPeCtUrL = "https://100067.connect.garena.com/oauth/token/inspect"
+
+oBvEr = "OB55"
+pLaYvEr = "1.132.1"
+sIgNeDpReFiXbYtEs = 64
+
+# ---------- LIVE X-Ga-Sv ----------
+def lIvExGaSv() -> str:
+    """Return current Unix time in seconds as a string."""
+    return str(int(time.time()))
 
 def eNcRyPtDaTa(dAtA):
     cIpHeR = AES.new(aEsKeY, AES.MODE_CBC, aEsIv)
@@ -61,7 +71,14 @@ def pRoToBuFdEcOdE(dAtA: bytes):
     dEcOdEd, _ = blackboxprotobuf.decode_message(dAtA)
     return dEcOdEd
 
-# Cache for token info: open_id, preferred_platform
+def sTrIpSiGnEdEnVeLoPe(bOdY: bytes, hEaDeRs) -> bytes:
+    try:
+        if hEaDeRs.get("x-ga-rv") == "1" and len(bOdY) > sIgNeDpReFiXbYtEs:
+            return bOdY[sIgNeDpReFiXbYtEs:]
+    except Exception:
+        pass
+    return bOdY
+
 token_cache = {}
 cache_lock = threading.Lock()
 
@@ -152,17 +169,28 @@ def gEnErAtEmAjOrLoGiNrEsP(aCcEsStOkEn, oPeNiD, bAsEfIeLdS, pReFeRrEdPlAtFoRm=No
             gAmE.field_100 = str(pLaTfOrM)
             sEr = gAmE.SerializeToString()
             eNc = eNcRyPtDaTa(sEr)
+
+            # ---------- BUILD HEADERS PER REQUEST (live X-Ga-Sv) ----------
             hEaDeRs = {
-                "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
+                "User-Agent": "UnityPlayer/2018.4.12f1 (UnityWebRequest/1.0, libcurl/8.5.0-DEV)",
+                "Accept": "*/*",
+                "Accept-Encoding": "deflate, gzip",
+                "X-Ga-Sv": lIvExGaSv(),
+                "Authorization": "Bearer",
+                "X-Ga": "v1 1",
+                "ReleaseVersion": oBvEr,
                 "Content-Type": "application/octet-stream",
-                "X-Unity-Version": "2018.4.11f1",
-                "X-GA": "v1 1",
-                "ReleaseVersion": "OB54"
+                "X-Unity-Version": "2018.4.12f1",
+                "Connection": "Keep-Alive",
+                "Host": "loginbp.ppmainecoonghj.com",
             }
-            rEsP = requests.post(mAjOrLoGiNuRl, data=eNc, headers=hEaDeRs, verify=False, timeout=10)
+
+            rEsP = requests.post(mAjOrLoGiNuRl, data=eNc, headers=hEaDeRs,
+                                 verify=False, timeout=10)
             if rEsP.status_code != 200:
                 continue
-            return rEsP.content
+
+            return sTrIpSiGnEdEnVeLoPe(rEsP.content, rEsP.headers)
         except Exception:
             pass
         time.sleep(0.1)
@@ -179,9 +207,7 @@ class dYnAmIcVpShAnDlEr(BaseHTTPRequestHandler):
         self._handle()
 
     def _handle(self):
-        # Parse path: /<token>/<endpoint> or /<endpoint> (no token)
         path = self.path
-        # Strip leading and trailing slashes
         stripped = path.strip('/')
         if not stripped:
             self.send_response(404)
@@ -189,10 +215,8 @@ class dYnAmIcVpShAnDlEr(BaseHTTPRequestHandler):
             return
 
         parts = stripped.split('/')
-        # Determine if first part is a token (we assume any non-empty string that is not "Ping" or "MajorLogin")
         first = parts[0]
         if first in ("Ping", "MajorLogin"):
-            # No token in path, treat as missing token
             self.send_response(400)
             self.send_header('Content-Length', '0')
             self.end_headers()
@@ -212,21 +236,18 @@ class dYnAmIcVpShAnDlEr(BaseHTTPRequestHandler):
             self._handle_majorlogin(token)
             return
 
-        # Unknown endpoint
         self.send_response(404)
         self.send_header('Content-Length', '0')
         self.send_header('Connection', 'close')
         self.end_headers()
 
     def _handle_majorlogin(self, token):
-        # Get cached info or fetch new (thread‑safe)
         with cache_lock:
             if token in token_cache:
                 open_id, preferred_platform = token_cache[token]
             else:
                 try:
                     open_id = iNsPeCtToKeN(token)
-                    # Fetch account info to get preferred platform
                     _, _, _, preferred_platform = fEtChAcCoUnTiNfO(token)
                     token_cache[token] = (open_id, preferred_platform)
                 except Exception as e:
