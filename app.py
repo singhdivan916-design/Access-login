@@ -1,292 +1,126 @@
 #!/usr/bin/env python3
+"""
+Fully transparent forwarder.
+
+  Request  : client method + path + headers + body  ->  upstream verbatim
+  Response : upstream status + headers + body      ->  client verbatim
+
+The proxy does not add, remove, or rewrite anything on the response path
+except hop-by-hop headers (which the HTTP spec forbids forwarding).
+Content-Encoding is preserved, so compressed bodies flow through untouched.
+"""
 import sys
-import time
-import binascii
-import os
-import json
-import base64
 import warnings
-import threading
 import socketserver
 warnings.filterwarnings("ignore")
 import requests
 requests.packages.urllib3.disable_warnings()
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from datetime import datetime
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-from google.protobuf import descriptor_pool, message_factory
-import blackboxprotobuf
 
-C = "\033[1;36m"
-G = "\033[1;32m"
-R = "\033[1;31m"
-Y = "\033[1;33m"
-W = "\033[1;37m"
-S = "\033[0m"
+C = "\033[1;36m"; G = "\033[1;32m"; R = "\033[1;31m"
+Y = "\033[1;33m"; W = "\033[1;37m"; S = "\033[0m"
 
-# Proto definitions (unchanged)
-mYdEsCrIpToR = b'\n\x08my.proto"\xae\t\n\x08GameData\x12\x11\n\ttimestamp\x18\x03 \x01(\t\x12\x11\n\tgame_name\x18\x04 \x01(\t\x12\x14\n\x0cgame_version\x18\x05 \x01(\x05\x12\x14\n\x0cversion_code\x18\x07 \x01(\t\x12\x0f\n\x07os_info\x18\x08 \x01(\t\x12\x13\n\x0bdevice_type\x18\t \x01(\t\x12\x18\n\x10network_provider\x18\n \x01(\t\x12\x17\n\x0fconnection_type\x18\x0b \x01(\t\x12\x14\n\x0cscreen_width\x18\x0c \x01(\x05\x12\x15\n\rscreen_height\x18\r \x01(\x05\x12\x0b\n\x03dpi\x18\x0e \x01(\t\x12\x10\n\x08cpu_info\x18\x0f \x01(\t\x12\x11\n\ttotal_ram\x18\x10 \x01(\x05\x12\x10\n\x08gpu_name\x18\x11 \x01(\t\x12\x13\n\x0bgpu_version\x18\x12 \x01(\t\x12\x0f\n\x07user_id\x18\x13 \x01(\t\x12\x12\n\nip_address\x18\x14 \x01(\t\x12\x10\n\x08language\x18\x15 \x01(\t\x12\x0f\n\x07open_id\x18\x16 \x01(\t\x12\x15\n\rplatform_type\x18\x17 \x01(\x05\x12\x1a\n\x12device_form_factor\x18\x18 \x01(\t\x12\x14\n\x0cdevice_model\x18\x19 \x01(\t\x12\x14\n\x0caccess_token\x18\x1d \x01(\t\x12\x18\n\x10unknown_field_30\x18\x1e \x01(\x05\x12"\n\x1asecondary_network_provider\x18) \x01(\t\x12!\n\x19secondary_connection_type\x18* \x01(\t\x12\x11\n\tunique_id\x18\x39 \x01(\t\x12\x10\n\x08field_60\x18< \x01(\x05\x12\x10\n\x08field_61\x18= \x01(\x05\x12\x10\n\x08field_62\x18> \x01(\x05\x12\x10\n\x08field_63\x18? \x01(\x05\x12\x10\n\x08field_64\x18@ \x01(\x05\x12\x10\n\x08field_65\x18A \x01(\x05\x12\x10\n\x08field_66\x18B \x01(\x05\x12\x10\n\x08field_67\x18C \x01(\x05\x12\x10\n\x08field_70\x18F \x01(\x05\x12\x10\n\x08field_73\x18I \x01(\x05\x12\x14\n\x0clibrary_path\x18J \x01(\t\x12\x10\n\x08field_76\x18L \x01(\x05\x12\x10\n\x08apk_info\x18M \x01(\t\x12\x10\n\x08field_78\x18N \x01(\x05\x12\x10\n\x08field_79\x18O \x01(\x05\x12\x17\n\x0fos_architecture\x18Q \x01(\t\x12\x14\n\x0cbuild_number\x18S \x01(\t\x12\x10\n\x08field_85\x18U \x01(\x05\x12\x18\n\x10graphics_backend\x18V \x01(\t\x12\x19\n\x11max_texture_units\x18W \x01(\x05\x12\x15\n\rrendering_api\x18X \x01(\x05\x12\x18\n\x10encoded_field_89\x18Y \x01(\t\x12\x10\n\x08field_92\x18\\ \x01(\x05\x12\x13\n\x0bmarketplace\x18] \x01(\t\x12\x16\n\x0eencryption_key\x18^ \x01(\t\x12\x15\n\rtotal_storage\x18_ \x01(\x05\x12\x10\n\x08field_97\x18a \x01(\x05\x12\x10\n\x08field_98\x18b \x01(\x05\x12\x10\n\x08field_99\x18c \x01(\t\x12\x11\n\tfield_100\x18d \x01(\tb\x06proto3'
+UPSTREAM    = "https://loginbp.ppmainecoonghj.com"
+LISTEN_PORT = 5030
 
-oUtPuTdEsCrIpToR = b'\n\x13jwt_generator.proto"\xd2\x02\n\nGarena_420\x12\x12\n\naccount_id\x18\x01 \x01(\x03\x12\x0e\n\x06region\x18\x02 \x01(\t\x12\r\n\x05place\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\r\n\x05token\x18\x08 \x01(\t\x12\n\n\x02id\x18\t \x01(\x05\x12\x0b\n\x03api\x18\n \x01(\t\x12\x0e\n\x06number\x18\x0c \x01(\x05\x12\x1e\n\tGarena420\x18\x0f \x01(\x0b\x32\x0b.Garena_420\x12\x0c\n\x04area\x18\x10 \x01(\t\x12\x11\n\tmain_area\x18\x12 \x01(\t\x12\x0c\n\x04city\x18\x13 \x01(\t\x12\x0c\n\x04name\x18\x14 \x01(\t\x12\x11\n\ttimestamp\x18\x15 \x01(\x03\x12\x0e\n\x06binary\x18\x16 \x01(\x0c\x12\x13\n\x0bbinary_data\x18\x17 \x01(\x0c\x1a"\n\x12Decrypted_Payloads\x12\x0c\n\x04type\x18\x01 \x01(\x05b\x06proto3'
+# hop-by-hop headers (RFC 7230 §6.1) — MUST NOT be forwarded either way
+HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade",
+}
 
-pOoL = descriptor_pool.Default()
-pOoL.AddSerializedFile(mYdEsCrIpToR)
-pOoL.AddSerializedFile(oUtPuTdEsCrIpToR)
+# request-only drops: Host must be rewritten so we reach the real server.
+# We also let `requests` compute Content-Length from the actual body bytes.
+REQ_DROP = HOP | {"host", "content-length"}
 
-factory = message_factory.MessageFactory(pool=pOoL)
-gAmEdAtA = factory.GetPrototype(pOoL.FindMessageTypeByName('GameData'))
-gArEnA420 = factory.GetPrototype(pOoL.FindMessageTypeByName('Garena_420'))
-
-aEsKeY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
-aEsIv = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
-
-# ---------- UPDATED ----------
-mAjOrLoGiNuRl = "https://loginbp.ppmainecoonghj.com/MajorLogin"
-iNsPeCtUrL = "https://100067.connect.garena.com/oauth/token/inspect"
-
-oBvEr = "OB55"
-pLaYvEr = "1.132.1"
-sIgNeDpReFiXbYtEs = 64
-
-# ---------- LIVE X-Ga-Sv ----------
-def lIvExGaSv() -> str:
-    """Return current Unix time in seconds as a string."""
-    return str(int(time.time()))
-
-def eNcRyPtDaTa(dAtA):
-    cIpHeR = AES.new(aEsKeY, AES.MODE_CBC, aEsIv)
-    return cIpHeR.encrypt(pad(dAtA, AES.block_size))
-
-def dEcRyPtDaTa(dAtA):
-    if len(dAtA) % 16 != 0:
-        return dAtA
-    try:
-        cIpHeR = AES.new(aEsKeY, AES.MODE_CBC, aEsIv)
-        return unpad(cIpHeR.decrypt(dAtA), AES.block_size)
-    except:
-        return dAtA
-
-def pRoToBuFdEcOdE(dAtA: bytes):
-    dEcOdEd, _ = blackboxprotobuf.decode_message(dAtA)
-    return dEcOdEd
-
-def sTrIpSiGnEdEnVeLoPe(bOdY: bytes, hEaDeRs) -> bytes:
-    try:
-        if hEaDeRs.get("x-ga-rv") == "1" and len(bOdY) > sIgNeDpReFiXbYtEs:
-            return bOdY[sIgNeDpReFiXbYtEs:]
-    except Exception:
-        pass
-    return bOdY
-
-token_cache = {}
-cache_lock = threading.Lock()
-
-def iNsPeCtToKeN(aCcEsStOkEn):
-    uRl = f"{iNsPeCtUrL}?token={aCcEsStOkEn}"
-    hEaDeRs = {'User-Agent': "GarenaMSDK/4.0.19P9"}
-    rEsP = requests.get(uRl, headers=hEaDeRs, timeout=10, verify=False)
-    if rEsP.status_code != 200:
-        raise Exception(f"Inspect failed: {rEsP.status_code}")
-    dAtA = rEsP.json()
-    return dAtA.get('open_id')
-
-xOrKeY = b"1e5898ccb8dfdd921f9bdea848768b64a201"
-
-def dEcOdEfFnAmE(b64_str: str) -> str:
-    try:
-        if not b64_str:
-            return ""
-        b64_str = b64_str.strip()
-        b64_str += "=" * ((4 - len(b64_str) % 4) % 4)
-        encrypted_bytes = base64.b64decode(b64_str)
-        decrypted_bytes = bytearray()
-        for i, byte in enumerate(encrypted_bytes):
-            key_byte = xOrKeY[i % len(xOrKeY)]
-            decrypted_bytes.append(byte ^ key_byte)
-        return decrypted_bytes.decode('utf-8', errors='ignore')
-    except Exception:
-        return b64_str
-
-def fEtChAcCoUnTiNfO(aCcEsStOkEn):
-    uRl = f"https://ff-jwt-gen-api.lovable.app/api/public/token?access_token={aCcEsStOkEn}"
-    rEsP = requests.get(uRl, timeout=10, verify=False)
-    if rEsP.status_code != 200:
-        raise Exception(f"API returned {rEsP.status_code}")
-    dAtA = rEsP.json()
-    if not dAtA.get('success', False):
-        raise Exception("API indicated failure")
-    aCcOuNtUiD = dAtA.get('account_uid', 'N/A')
-    rEgIoN = dAtA.get('region', 'N/A')
-    pLaTfOrMuSeD = dAtA.get('platform_type_used')
-    pAyLoAd = dAtA.get('jwt_decoded', {}).get('payload', {})
-    nIcKnAmEeNc = pAyLoAd.get('nickname', '')
-    nIcKnAmE = dEcOdEfFnAmE(nIcKnAmEeNc) if nIcKnAmEeNc else 'Unknown'
-    return aCcOuNtUiD, rEgIoN, nIcKnAmE, pLaTfOrMuSeD
-
-def gEnErAtEmAjOrLoGiNrEsP(aCcEsStOkEn, oPeNiD, bAsEfIeLdS, pReFeRrEdPlAtFoRm=None):
-    aLlPlAtFoRmS = list(range(1, 10))
-    if pReFeRrEdPlAtFoRm is not None and pReFeRrEdPlAtFoRm in aLlPlAtFoRmS:
-        pLaTfOrMs = [pReFeRrEdPlAtFoRm] + [p for p in aLlPlAtFoRmS if p != pReFeRrEdPlAtFoRm]
-    else:
-        pLaTfOrMs = aLlPlAtFoRmS
-
-    for pLaTfOrM in pLaTfOrMs:
-        try:
-            gAmE = gAmEdAtA()
-            for fIeLdNuMsTr, vAlUe in bAsEfIeLdS.items():
-                fIeLdNuM = int(fIeLdNuMsTr)
-                fIeLd = gAmEdAtA.DESCRIPTOR.fields_by_number.get(fIeLdNuM)
-                if fIeLd is None:
-                    continue
-                if fIeLd.type == fIeLd.TYPE_STRING:
-                    if isinstance(vAlUe, bytes):
-                        try:
-                            vAlUe = vAlUe.decode('utf-8')
-                        except UnicodeDecodeError:
-                            vAlUe = vAlUe.hex()
-                    setattr(gAmE, fIeLd.name, str(vAlUe))
-                elif fIeLd.type in (fIeLd.TYPE_INT32, fIeLd.TYPE_INT64,
-                                    fIeLd.TYPE_UINT32, fIeLd.TYPE_UINT64,
-                                    fIeLd.TYPE_SINT32, fIeLd.TYPE_SINT64):
-                    setattr(gAmE, fIeLd.name, int(vAlUe))
-                elif fIeLd.type == fIeLd.TYPE_BOOL:
-                    setattr(gAmE, fIeLd.name, bool(vAlUe))
-                elif fIeLd.type == fIeLd.TYPE_BYTES:
-                    if isinstance(vAlUe, str):
-                        try:
-                            vAlUe = binascii.unhexlify(vAlUe)
-                        except:
-                            vAlUe = vAlUe.encode()
-                    setattr(gAmE, fIeLd.name, vAlUe)
-                else:
-                    setattr(gAmE, fIeLd.name, vAlUe)
-            gAmE.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            gAmE.open_id = oPeNiD
-            gAmE.access_token = aCcEsStOkEn
-            gAmE.platform_type = pLaTfOrM
-            gAmE.field_99 = str(pLaTfOrM)
-            gAmE.field_100 = str(pLaTfOrM)
-            sEr = gAmE.SerializeToString()
-            eNc = eNcRyPtDaTa(sEr)
-
-            # ---------- BUILD HEADERS PER REQUEST (live X-Ga-Sv) ----------
-            hEaDeRs = {
-                "User-Agent": "UnityPlayer/2018.4.12f1 (UnityWebRequest/1.0, libcurl/8.5.0-DEV)",
-                "Accept": "*/*",
-                "Accept-Encoding": "deflate, gzip",
-                "X-Ga-Sv": lIvExGaSv(),
-                "Authorization": "Bearer",
-                "X-Ga": "v1 1",
-                "ReleaseVersion": oBvEr,
-                "Content-Type": "application/octet-stream",
-                "X-Unity-Version": "2018.4.12f1",
-                "Connection": "Keep-Alive",
-                "Host": "loginbp.ppmainecoonghj.com",
-            }
-
-            rEsP = requests.post(mAjOrLoGiNuRl, data=eNc, headers=hEaDeRs,
-                                 verify=False, timeout=10)
-            if rEsP.status_code != 200:
-                continue
-
-            return sTrIpSiGnEdEnVeLoPe(rEsP.content, rEsP.headers)
-        except Exception:
-            pass
-        time.sleep(0.1)
-    raise Exception("No valid response after trying all platforms 1-9")
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
-    daemon_threads = True
+    daemon_threads  = True
     allow_reuse_address = True
 
-class dYnAmIcVpShAnDlEr(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self._handle()
-    def do_POST(self):
-        self._handle()
 
-    def _handle(self):
-        path = self.path
-        stripped = path.strip('/')
-        if not stripped:
-            self.send_response(404)
-            self.end_headers()
-            return
+class ForwardHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
 
-        parts = stripped.split('/')
-        first = parts[0]
-        if first in ("Ping", "MajorLogin"):
-            self.send_response(400)
-            self.send_header('Content-Length', '0')
-            self.end_headers()
-            return
-        else:
-            token = first
-            endpoint = parts[1] if len(parts) > 1 else ''
+    def do_GET(self):     self._forward()
+    def do_POST(self):    self._forward()
+    def do_PUT(self):     self._forward()
+    def do_DELETE(self):  self._forward()
+    def do_HEAD(self):    self._forward()
+    def do_OPTIONS(self): self._forward()
+    def do_PATCH(self):   self._forward()
 
-        if endpoint == "Ping":
-            self.send_response(200)
-            self.send_header('Content-Length', '0')
-            self.send_header('Connection', 'close')
-            self.end_headers()
-            return
+    def _forward(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        body   = self.rfile.read(length) if length else None
 
-        if endpoint == "MajorLogin":
-            self._handle_majorlogin(token)
-            return
+        # Forward everything the client sent, minus hop-by-hop + Host/CL
+        fwd_headers = {
+            k: v for k, v in self.headers.items()
+            if k.lower() not in REQ_DROP
+        }
 
-        self.send_response(404)
-        self.send_header('Content-Length', '0')
-        self.send_header('Connection', 'close')
+        try:
+            r = requests.request(
+                method          = self.command,
+                url             = UPSTREAM + self.path,
+                headers         = fwd_headers,
+                data            = body,
+                verify          = False,
+                timeout         = 30,
+                allow_redirects = False,
+                stream          = True,
+            )
+            # Preserve raw (possibly gzip/deflate) bytes so Content-Encoding
+            # + Content-Length from the server remain untouched.
+            r.raw.decode_content = False
+            raw = r.raw.read()
+        except Exception as e:
+            print(R + f"  ✗ upstream error: {e}" + S)
+            return self._empty(502)
+
+        print(C + f"  → {self.command} {self.path}  ({len(body) if body else 0} B)"
+              + G + f"   ← {r.status_code} ({len(raw)} B)" + S)
+
+        # Write status line only — BaseHTTPRequestHandler would otherwise
+        # inject its own Server/Date headers on top of upstream's.
+        self.send_response_only(r.status_code, r.reason)
+
+        has_content_length = False
+        for k, v in r.headers.items():
+            lk = k.lower()
+            if lk in HOP:
+                continue
+            if lk == "content-length":
+                has_content_length = True
+            self.send_header(k, v)
+
+        # Only add Content-Length if upstream didn't provide one
+        # (e.g. upstream replied with chunked encoding).
+        if not has_content_length and self.command != "HEAD":
+            self.send_header("Content-Length", str(len(raw)))
+
         self.end_headers()
 
-    def _handle_majorlogin(self, token):
-        with cache_lock:
-            if token in token_cache:
-                open_id, preferred_platform = token_cache[token]
-            else:
-                try:
-                    open_id = iNsPeCtToKeN(token)
-                    _, _, _, preferred_platform = fEtChAcCoUnTiNfO(token)
-                    token_cache[token] = (open_id, preferred_platform)
-                except Exception as e:
-                    print(R + f"        Error fetching token info: {e}" + S)
-                    self.send_response(500)
-                    self.end_headers()
-                    return
+        if self.command != "HEAD" and raw:
+            try:
+                self.wfile.write(raw)
+            except Exception:
+                pass
 
-        lEnGtH = int(self.headers.get('Content-Length', 0))
-        bOdY = self.rfile.read(lEnGtH) if lEnGtH else b''
-        try:
-            dEcRyPtEd = dEcRyPtDaTa(bOdY)
-            dEcOdEd = pRoToBuFdEcOdE(dEcRyPtEd)
-        except Exception as e:
-            print(R + f"        Error decrypting/parsing request: {e}" + S)
-            self.send_response(500)
-            self.end_headers()
-            return
-
-        try:
-            rEsPoNsE = gEnErAtEmAjOrLoGiNrEsP(token, open_id, dEcOdEd, preferred_platform)
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/octet-stream')
-            self.send_header('Content-Length', len(rEsPoNsE))
-            self.send_header('Connection', 'close')
-            self.end_headers()
-            self.wfile.write(rEsPoNsE)
-        except Exception as e:
-            print(R + f"        Error generating response: {e}" + S)
-            self.send_response(500)
-            self.send_header('Connection', 'close')
-            self.end_headers()
+    def _empty(self, code: int):
+        self.send_response(code)
+        self.send_header("Content-Length", "0")
+        self.send_header("Connection", "close")
+        self.end_headers()
 
     def log_message(self, *args):
         pass
 
-def pRiNtBaNnEr():
-    os.system('cls' if os.name == 'nt' else 'clear')
-    print("\n")
+
+def banner():
+    import os
+    os.system("cls" if os.name == "nt" else "clear")
     print(W + r"""
         ██████╗ ██╗██╗   ██╗ █████╗ ███╗   ██╗
         ██╔══██╗██║██║   ██║██╔══██╗████╗  ██║
@@ -295,24 +129,20 @@ def pRiNtBaNnEr():
         ██████╔╝██║ ╚████╔╝ ██║  ██║██║ ╚████║
         ╚═════╝ ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝
     """ + S)
-    print(C + "        " + "═" * 50 + S)
-    print(Y + "                     Free Fire Login Engine" + S)
-    print(C + "        " + "═" * 50 + S)
-    print("\n")
-    print(W + "       FireXDecoder ❤️  |  Partner: Divan Singh" + S)
-    print(G + "        Telegram : Divan Singh: @DivanSingh" + S)
-    print(G + "        Telegram : FireXDecoder: @FireXDecoder" + S)
-    print("\n")
+    print(C + "        " + "═" * 55 + S)
+    print(Y + "        Transparent forwarder — 100% pass-through" + S)
+    print(C + "        " + "═" * 55 + S + "\n")
 
-if __name__ == '__main__':
-    pRiNtBaNnEr()
-    print(C + "        [*] Starting threaded login engine on http://0.0.0.0:5030 ..." + S)
-    server = ThreadingHTTPServer(('0.0.0.0', 5030), dYnAmIcVpShAnDlEr)
-    server.handle_error = lambda *args: None
-    print(G + "        [✓] Server running (multi‑threaded). Press Ctrl+C to stop." + S)
+
+if __name__ == "__main__":
+    banner()
+    print(C + f"        [*] Listening on http://0.0.0.0:{LISTEN_PORT}  →  {UPSTREAM}" + S)
+    print(G + "        [✓] Ready. Press Ctrl+C to stop.\n" + S)
+    srv = ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), ForwardHandler)
+    srv.handle_error = lambda *a: None
     try:
-        server.serve_forever()
+        srv.serve_forever()
     except KeyboardInterrupt:
-        print("\n" + R + "        [!] Shutting down." + S)
-        server.shutdown()
+        print(R + "\n        [!] Shutting down." + S)
+        srv.shutdown()
         sys.exit(0)
